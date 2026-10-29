@@ -6,3 +6,5 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+# Runtime persisted FAISS index (regenerated on startup/ingest).
+data/index/

@@ -10,6 +10,7 @@ COPY data/ ./data/
 
 ENV PYTHONPATH=/app/src
 ENV DATA_DIR=/app/data/sample_docs
+ENV INDEX_DIR=/app/data/index
 
 EXPOSE 8000
 

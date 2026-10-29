@@ -47,9 +47,17 @@ Design choices, stated plainly:
 - **The critic is a grounding check, not a guarantee.** It verifies
   content-word overlap between answer and retrieved chunks and
   replaces ungrounded answers with an honest "not found" reply.
-- **The index is in-memory.** Ingested documents are lost on restart.
-  Persistence (e.g. a persisted FAISS index or a vector database) is
-  the natural next step and is listed under Limitations.
+- **The index is persisted to disk.** On ingest, the FAISS index
+  (`faiss.write_index`) and chunk metadata (JSON) are saved to
+  `INDEX_DIR` (default `data/index/`); on startup a persisted index
+  is restored, so ingested documents survive restarts and the bundled
+  docs are not re-added (no duplicates). A missing, corrupt, or
+  dimension-mismatched store simply starts empty and falls back to
+  the bundled docs.
+- **The API has optional API-key auth.** Set `API_KEY` and clients
+  must send it as an `X-API-Key` header on `/ask` and `/ingest`
+  (`/health` stays open). With no key set the API runs open and logs
+  a warning at startup — local demo mode only, not a hosted setup.
 
 ## Setup
 
@@ -69,8 +77,10 @@ PYTHONPATH=src python -m agentic_rag_assistant.main
 # or: uvicorn agentic_rag_assistant.api:app --port 8000  (with PYTHONPATH=src)
 ```
 
-The server starts on http://localhost:8000. On startup it indexes the
-synthetic docs in `data/sample_docs/`.
+The server starts on http://localhost:8000. On startup it restores
+the persisted index from `INDEX_DIR` if one exists, otherwise it
+indexes the synthetic docs in `data/sample_docs/` (and persists them
+for the next start).
 
 With Docker:
 
@@ -89,11 +99,16 @@ curl -X POST http://localhost:8000/ask \
   -H 'Content-Type: application/json' \
   -d '{"question": "What is RAG?"}'
 
-# Ingest your own documents
+# Ingest your own documents (add -H 'X-API-Key: <key>' if API_KEY is set)
 curl -X POST http://localhost:8000/ingest \
   -H 'Content-Type: application/json' \
   -d '{"documents": [{"id": "doc1", "title": "My notes",
       "text": "The zebraquantum protocol synchronises widgets."}]}'
+
+# With API_KEY set, protected routes require the header (401 otherwise)
+curl -X POST http://localhost:8000/ask \
+  -H 'Content-Type: application/json' -H 'X-API-Key: <key>' \
+  -d '{"question": "What is RAG?"}'
 ```
 
 Response shape for `/ask`:
@@ -123,6 +138,8 @@ All configuration comes from environment variables (see
 | `OPENAI_BASE_URL` | OpenAI-compatible endpoint (default `https://api.openai.com/v1`) |
 | `MODEL_NAME` | Chat model name (default `gpt-4o-mini`) |
 | `DATA_DIR` | Startup docs directory (default `data/sample_docs`) |
+| `INDEX_DIR` | Persisted index directory (default `data/index`) |
+| `API_KEY` | Optional key for `/ask` + `/ingest` via `X-API-Key`; unset = open demo mode with a startup warning |
 | `TOP_K` | Chunks retrieved per question (default `3`) |
 
 ## Tests
@@ -134,8 +151,12 @@ PYTHONPATH=src pytest -q
 Tests run fully offline: they use the extractive fallback path, so no
 API key is needed and no network call is made. Coverage: document
 loading/splitting, FAISS retrieval relevance, router routing, the full
-graph (grounding + general path), and the API endpoints including
-ingest-then-ask.
+graph (grounding + general path), the API endpoints including
+ingest-then-ask, FAISS persistence round-trips (ingest -> reload ->
+ask finds the doc, plus corrupt/dimension-mismatch fallbacks), and
+API-key auth in both modes (open when unset, 401 without/wrong key
+when set). Test runs persist into a throwaway temp dir, never into
+the repo's `data/index/`.
 
 ## Evaluation
 
@@ -153,7 +174,7 @@ sample, not a benchmark claim.
 ```
 agentic-rag-assistant/
 ├── src/agentic_rag_assistant/
-│   ├── api.py            # FastAPI app: /health, /ask, /ingest
+│   ├── api.py            # FastAPI app: /health, /ask, /ingest (+ API-key auth)
 │   ├── service.py        # Service layer (store + graph + ingestion)
 │   ├── graph.py          # LangGraph: router -> retrieval -> answer -> critic
 │   ├── retriever.py      # FAISS vector store
@@ -173,10 +194,14 @@ agentic-rag-assistant/
 
 ## Limitations (honest list)
 
-- In-memory index only; restart loses ingested documents.
+- Single-process index file: no locking, so run one instance per
+  index directory; concurrent writers could corrupt the store.
+- API-key auth is a shared secret, not real identity: no OAuth,
+  no per-user permissions, no rate limiting, no HTTPS termination
+  in this app (use a reverse proxy for any real exposure).
+- The live LLM path has not been exercised with a real key — only
+  the offline fallback is tested. A real-key run is still pending.
 - Hashed embeddings capture keyword overlap, not deep semantics.
 - The critic checks word overlap, not true factual correctness.
 - The eval set is 6 hand-written questions — a smoke signal, not a
   benchmark.
-- No authentication on the API: this is a portfolio demo, not a
-  hosted service.

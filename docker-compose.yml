@@ -4,6 +4,13 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       DATA_DIR: /app/data/sample_docs
+      INDEX_DIR: /app/data/index
+    volumes:
+      - index-data:/app/data/index
+
+volumes:
+  index-data:

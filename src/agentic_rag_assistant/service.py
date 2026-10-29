@@ -26,13 +26,26 @@ class AssistantService:
 
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or load_settings()
-        self.store = FaissStore(dim=self.settings.embedding_dim)
+        self.store = FaissStore(
+            dim=self.settings.embedding_dim,
+            persist_dir=self.settings.index_dir,
+        )
         self.graph = build_graph(self.store, self.settings)
         self._sample_docs_loaded = False
 
     def load_sample_docs(self) -> int:
-        """Index the bundled synthetic docs (once per service lifetime)."""
+        """Prepare the index (once per service lifetime).
+
+        If a persisted index exists it is restored (including any
+        previously ingested documents) and the bundled docs are NOT
+        re-added, so a restart never duplicates chunks. Otherwise the
+        bundled synthetic docs are indexed and persisted for next time.
+        Returns the number of newly indexed chunks (0 on restore).
+        """
         if self._sample_docs_loaded:
+            return 0
+        if self.store.load():
+            self._sample_docs_loaded = True
             return 0
         docs = load_markdown_files(self.settings.data_dir)
         chunks = split_documents(

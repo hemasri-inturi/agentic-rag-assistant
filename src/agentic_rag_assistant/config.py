@@ -20,6 +20,8 @@ class Settings:
     openai_base_url: str = "https://api.openai.com/v1"
     model_name: str = "gpt-4o-mini"
     data_dir: str = "data/sample_docs"
+    index_dir: str = "data/index"
+    api_key: str = ""
     top_k: int = 3
     chunk_size: int = 500
     chunk_overlap: int = 50
@@ -29,6 +31,11 @@ class Settings:
     def llm_configured(self) -> bool:
         """True only when a key is actually supplied."""
         return bool(self.openai_api_key)
+
+    @property
+    def auth_enabled(self) -> bool:
+        """True only when an API key is actually supplied."""
+        return bool(self.api_key)
 
 
 def load_settings() -> Settings:
@@ -40,6 +47,8 @@ def load_settings() -> Settings:
         ),
         model_name=os.environ.get("MODEL_NAME", "gpt-4o-mini"),
         data_dir=os.environ.get("DATA_DIR", "data/sample_docs"),
+        index_dir=os.environ.get("INDEX_DIR", "data/index"),
+        api_key=os.environ.get("API_KEY", ""),
         top_k=int(os.environ.get("TOP_K", "3")),
         chunk_size=int(os.environ.get("CHUNK_SIZE", "500")),
         chunk_overlap=int(os.environ.get("CHUNK_OVERLAP", "50")),
